@@ -78,12 +78,10 @@ if eI.num_contextwin > 1
 end
 
 %% im2col puts winSize frames in each column
-if eI.num_contextwin > 1
-    multi_data_slid = im2col(multi_data,[nFeat, ...
-                        eI.num_contextwin],'sliding');
-else
-    multi_data_slid = multi_data;
-end
+len = length(multi_data) - eI.num_contextwin + 1;
+ix = repmat((1:eI.num_contextwin)', 1, len) + ...
+    repmat(0:len-1, eI.num_contextwin, 1);
+multi_data_slid = multi_data(ix);
 % concatenate noise estimate to each input
 if mode == 1, % Testing
     c = find(unique_lengths == T);
@@ -92,7 +90,7 @@ if mode == 1, % Testing
         data_ag = [data_ag, multi_data_slid(:)];
         mixture_ag = [mixture_ag, mixture_spectrum(:)];
 
-        unique_lengths = [unique_lengths, T];
+        unique_lengths = [unique_lengths, T]; %#ok<*NASGU>
     else
         data_ag{c} = [data_ag{c}, multi_data_slid(:)];
         mixture_ag{c} = [mixture_ag{c}, mixture_spectrum(:)];
@@ -115,6 +113,7 @@ elseif mode == 3 % formulate one data per cell
 
 else % training
     %% put it in the correct cell area.
+    last = 0;
     while T > 0
         % assumes length in ascending order.
         % Finds longest length shorter than utterance
@@ -122,19 +121,17 @@ else % training
 
         binLen = eI.seqLen(c);
         assert(~isempty(c),'could not find length bin for %d',T);
+        ix = last+1:last+binLen;
+        last = ix(end);        
         % copy data for this chunk
         data_ag{c}(:,seqLenPositions(c)) = ...
-            reshape(multi_data_slid(:,1:binLen),[],1);
+            reshape(multi_data_slid(:,ix),[],1);
         mixture_ag{c}(:,seqLenPositions(c)) = ...
-            reshape(mixture_spectrum(:,1:binLen),[],1);
+            reshape(mixture_spectrum(:,ix),[],1);
 
         seqLenPositions(c) = seqLenPositions(c) + 1;
         % trim for next iteration
         T = T-binLen;
-        if T > 0
-            multi_data_slid = multi_data_slid(:,(binLen+1):end);
-            mixture_spectrum = mixture_spectrum(:,(binLen+1):end);
-        end
     end
 end
 
@@ -145,17 +142,20 @@ return
 
 %% Unit test
 % (TODO) add
-eI.MFCCorlogMelorSpectrum=2; % 0- mfcc, 1- logmel, 2- spectrum
-eI.winsize = 1024;
-eI.nFFT = 1024;
-eI.hop =eI.winsize/2;
-eI.scf=1;
-eI.featDim =513;
+% 0- mfcc, 1- logmel, 2- spectrum
+% eI.MFCCorlogMelorSpectrum=2; 
+% eI.winsize = 1024;
+% eI.nFFT = 1024;
+% eI.hop =eI.winsize/2;
+% eI.scf=1;
+profile on %#ok<UNRCH>
+eI.featDim = 1;
 eI.num_contextwin=3;
 eI.inputDim = eI.featDim * eI.num_contextwin;
 
-[train1, fs, nbits]=wavread('female_train.wav');
-[train2, fs, nbits]=wavread('male_train.wav');
+[train, fs] = audioread('./Wavfile/dev/abjones_5_08.wav');
+train1 = train(:,1);
+train2 = train(:,2);
 
 maxLength=max([length(train1), length(train2)]);
 train1(end+1:maxLength)=eps;
@@ -165,8 +165,11 @@ train1=train1./sqrt(sum(train1.^2));
 train2=train2./sqrt(sum(train2.^2));
 
 eI.seqLen = [1 50 100];
-eI.inputL1=0;eI.outputL1=0;
+eI.inputL1=0;
+eI.outputL1=0;
 eI.fs=fs;
-formulate_data_test(train1+train2, eI, 3)
+[data_ag, target_ag, mixture_ag] = ...
+    formulate_data_test_td(train1+train2, eI, 3)
+profile viewer
 end
 
