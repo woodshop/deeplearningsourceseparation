@@ -15,19 +15,19 @@ function  varargout = formulate_data_test_td(dmix, eI, mode)
 unique_lengths = [];
 
 %% Set up. During testing, dont know the lengths so cant pre-allocate
-if mode
+if mode,
     data_ag = {};
     target_ag = {};  % returns empty targets
     mixture_ag = {};
     item=0;
 else
-    seqLenSizes = zeros(1, length(eI.seqLen));
+    seqLenSizes = zeros(1,length(eI.seqLen));
     % input feature calculate
-    DATA = dmix';
+    [DATA, ~, eI]=compute_features_temporal(dmix, eI);
     [T, nfeat] = size(DATA');
-
+    
     remainder = T;
-    for i = length(eI.seqLen):-1:1
+    for i=length(eI.seqLen):-1:1
         num = floor(remainder/eI.seqLen(i));
         remainder = mod(remainder,eI.seqLen(i));
         seqLenSizes(i) = seqLenSizes(i)+num;
@@ -35,8 +35,8 @@ else
     data_ag = cell(1,length(eI.seqLen));
     target_ag = cell(1,length(eI.seqLen));
     mixture_ag = cell(1,length(eI.seqLen));
-
-    for i = length(eI.seqLen):-1:1
+    
+    for i=length(eI.seqLen):-1:1
         data_ag{i} = zeros(eI.inputDim*eI.seqLen(i),seqLenSizes(i));
         target_ag{i} = zeros(2*nfeat*eI.seqLen(i),seqLenSizes(i));
         mixture_ag{i} = zeros(nfeat*eI.seqLen(i),seqLenSizes(i));
@@ -45,21 +45,20 @@ end
 
 seqLenPositions = ones(1,length(eI.seqLen));
 
-DATA = dmix';
-mixture_spectrum = DATA;
+[DATA, mixture_spectrum, eI]=compute_features_temporal(dmix, eI);
 
 multi_data = DATA;
-[nFeat,T] = size(multi_data);
+[nfeat,T] = size(multi_data);
 
 %% input normalize
 if eI.inputL1 == 1, % DATA (NUMCOFS x nSamp)
-%         apply CMVN to input
+    %         apply CMVN to input
     cur_mean = mean(multi_data, 2);
     cur_std = std(multi_data, 0, 2);
     multi_data = bsxfun(@minus, multi_data, cur_mean);
     multi_data = bsxfun(@rdivide, multi_data, cur_std);
 elseif eI.inputL1 == 2,
-    l1norm = sum(multi_data,1) + eps;
+    l1norm = sum(multi_data,1)+eps;
     multi_data = bsxfun(@rdivide, multi_data, l1norm);
 end
 
@@ -67,20 +66,20 @@ end
 if eI.num_contextwin > 1
     % winSize must be odd for padding to work
     if mod(eI.num_contextwin,2) ~= 1
-        fprintf(1, 'error! winSize must be odd!');
+        fprintf(1,'error! winSize must be odd!');
         return
-    end
+    end;
     % pad with repeated frames on both sides so im2col data
     % aligns with output data
     nP = (eI.num_contextwin-1)/2;
     multi_data = [repmat(multi_data(:,1),1,nP), multi_data, ...
-                  repmat(multi_data(:,end),1,nP)];
+        repmat(multi_data(:,end),1,nP)];
 end
 
 %% im2col puts winSize frames in each column
-len = length(multi_data) - eI.num_contextwin + 1;
-ix = repmat((1:eI.num_contextwin)', 1, len) + ...
-    repmat(0:len-1, eI.num_contextwin, 1);
+nframes = size(multi_data, 2) - eI.num_contextwin + 1;
+ix = repmat((1:eI.num_contextwin*nfeat)', 1, nframes) + ...
+    repmat(0:nframes-1, eI.num_contextwin*nfeat, 1);
 multi_data_slid = multi_data(ix);
 % concatenate noise estimate to each input
 if mode == 1, % Testing
@@ -88,29 +87,29 @@ if mode == 1, % Testing
     if isempty(c)
         % add new unique length if necessary
         data_ag = [data_ag, multi_data_slid(:)];
-        mixture_ag = [mixture_ag, mixture_spectrum(:)];
-
-        unique_lengths = [unique_lengths, T]; %#ok<*NASGU>
+        mixture_ag=[mixture_ag, mixture_spectrum(:)];
+        
+%         unique_lengths = [unique_lengths, T];
     else
         data_ag{c} = [data_ag{c}, multi_data_slid(:)];
         mixture_ag{c} = [mixture_ag{c}, mixture_spectrum(:)];
-    end
+    end;
 elseif mode == 2, % Error analysis.
     c = find(unique_lengths == T);
     if isempty(c)
         % add new unique length if necessary
         data_ag = [data_ag, multi_data_slid(:)];
-        unique_lengths = [unique_lengths, T];
+%         unique_lengths = [unique_lengths, T];
     else
         data_ag{c} = [data_ag{c}, multi_data_slid(:)];
-    end
+    end;
 elseif mode == 3 % formulate one data per cell
-% 		c = find(unique_lengths == T);
+    % 		c = find(unique_lengths == T);
     item =item+1;
     % feadim x nframes
     data_ag{item} = multi_data_slid;
     mixture_ag{item} = mixture_spectrum;
-
+    
 else % training
     %% put it in the correct cell area.
     last = 0;
@@ -118,42 +117,41 @@ else % training
         % assumes length in ascending order.
         % Finds longest length shorter than utterance
         c = find(eI.seqLen <= T, 1,'last');
-
+        
         binLen = eI.seqLen(c);
-        assert(~isempty(c),'could not find length bin for %d',T);
         ix = last+1:last+binLen;
-        last = ix(end);        
+        last = ix(end);
+        assert(~isempty(c),'could not find length bin for %d',T);
         % copy data for this chunk
         data_ag{c}(:,seqLenPositions(c)) = ...
             reshape(multi_data_slid(:,ix),[],1);
         mixture_ag{c}(:,seqLenPositions(c)) = ...
             reshape(mixture_spectrum(:,ix),[],1);
-
-        seqLenPositions(c) = seqLenPositions(c) + 1;
+        
+        seqLenPositions(c) = seqLenPositions(c)+1;
         % trim for next iteration
         T = T-binLen;
-    end
-end
+    end;
+end;
 
 theoutputs = {data_ag, target_ag, mixture_ag};
 varargout = theoutputs(1:nargout);
 
-return
+return;
 
 %% Unit test
 % (TODO) add
-% 0- mfcc, 1- logmel, 2- spectrum
-% eI.MFCCorlogMelorSpectrum=2; 
-% eI.winsize = 1024;
-% eI.nFFT = 1024;
-% eI.hop =eI.winsize/2;
-% eI.scf=1;
 profile on %#ok<UNRCH>
-eI.featDim = 1;
-eI.num_contextwin=3;
+eI.RealorComplex = 0; % 0- real, 1- complex
+eI.winsize = 512;
+% eI.nFFT = 1024;
+eI.hop = eI.winsize/2;
+eI.scf = 1;
+eI.featDim = 512;
+eI.num_contextwin = 3;
 eI.inputDim = eI.featDim * eI.num_contextwin;
 
-[train, fs] = audioread('./Wavfile/dev/abjones_5_08.wav');
+[train, fs] = audioread('Wavfile/dev/abjones_5_08.wav');
 train1 = train(:,1);
 train2 = train(:,2);
 
@@ -169,7 +167,8 @@ eI.inputL1=0;
 eI.outputL1=0;
 eI.fs=fs;
 [data_ag, target_ag, mixture_ag] = ...
-    formulate_data_test_td(train1+train2, eI, 3)
+    formulate_data_test_td(train1+train2, eI, 3);
 profile viewer
-end
+profile off
+
 
