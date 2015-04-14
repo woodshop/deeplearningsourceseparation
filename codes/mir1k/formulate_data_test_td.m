@@ -45,7 +45,7 @@ end
 
 seqLenPositions = ones(1,length(eI.seqLen));
 
-[DATA, mixture_spectrum, eI]=compute_features_temporal(dmix, eI);
+[DATA, mixture_spectrum, eI]=compute_features_td(dmix, eI);
 
 multi_data = DATA;
 [nfeat,T] = size(multi_data);
@@ -105,7 +105,7 @@ elseif mode == 2, % Error analysis.
     end;
 elseif mode == 3 % formulate one data per cell
     % 		c = find(unique_lengths == T);
-    item =item+1;
+    item = item+1;
     % feadim x nframes
     data_ag{item} = multi_data_slid;
     mixture_ag{item} = mixture_spectrum;
@@ -123,15 +123,22 @@ else % training
         last = ix(end);
         assert(~isempty(c),'could not find length bin for %d',T);
         % copy data for this chunk
-        data_ag{c}(:,seqLenPositions(c)) = ...
-            reshape(multi_data_slid(:,ix),[],1);
-        mixture_ag{c}(:,seqLenPositions(c)) = ...
-            reshape(mixture_spectrum(:,ix),[],1);
+%         data_ag{c}(:,seqLenPositions(c)) = ...
+%             reshape(multi_data_slid(:,ix),[],1);
+%         mixture_ag{c}(:,seqLenPositions(c)) = ...
+%             reshape(mixture_spectrum(:,ix),[],1);
+		data_ag{c}(:,seqLenPositions(c))=reshape(multi_data_slid(:,1:binLen),[],1);
+        mixture_ag{c}(:,seqLenPositions(c))=reshape(mixture_spectrum(:,1:binLen),[],1);
         
         seqLenPositions(c) = seqLenPositions(c)+1;
         % trim for next iteration
         T = T-binLen;
-    end;
+ 		T = T-binLen;
+		if T > 0
+			multi_data_slid = multi_data_slid(:,(binLen+1):end);
+            mixture_spectrum = mixture_spectrum(:,(binLen+1):end);
+		end;
+   end;
 end;
 
 theoutputs = {data_ag, target_ag, mixture_ag};
@@ -167,7 +174,7 @@ eI.inputL1=0;
 eI.outputL1=0;
 eI.fs=fs;
 [data_ag, target_ag, mixture_ag] = ...
-    formulate_data_test_td(train1+train2, eI, 3);
+    formulate_data_test_td(train1+train2, eI, 1);
 profile viewer
 profile off
 

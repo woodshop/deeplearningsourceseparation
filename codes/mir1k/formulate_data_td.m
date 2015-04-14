@@ -1,4 +1,4 @@
-function  varargout = formulate_data_time_domain(train_files, eI, mode)
+function  varargout = formulate_data_td(train_files, eI, mode)
 % (TODO) add
 % eI.winSize: Size of window
 % eI.seqLen: unique lengths (in ascending order)
@@ -55,7 +55,7 @@ else % training -- chunk
             dmix = train1 + train2_shift;
             
             % input feature calculate
-            [DATA, mixture_spectrum, eI] = compute_features_temporal(dmix, eI);
+            [DATA, mixture_spectrum, eI] = compute_features_td(dmix, eI);
             
             [T, ~] = size(DATA');
             nfeat = size(mixture_spectrum,1);
@@ -129,10 +129,10 @@ for ifile=1:numel(train_files)
         fprintf('\tShift: %d\n', ioffset)
         train2_shift = [train2(ioffset: end); train2(1: ioffset-1)];
         dmix = train1 + train2_shift;
-        [DATA, mixture_spectrum, eI] = compute_features_temporal(dmix, eI);
+        [DATA, mixture_spectrum, eI] = compute_features_td(dmix, eI);
         
-        spectrum.signal = compute_features_temporal(train1, eI);
-        spectrum.noise = compute_features_temporal(train2_shift, eI);
+        spectrum.signal = compute_features_td(train1, eI);
+        spectrum.noise = compute_features_td(train2_shift, eI);
         
         multi_data = DATA;
         [~,T] = size(multi_data);
@@ -254,7 +254,7 @@ eI.DataPath=['.',filesep, 'Wavfile', filesep];
 
 eI.RealorComplex = 0; % 0- real, 1- complex
 eI.winsize = 512;
-eI.hop =eI.winsize/2;
+eI.hop = eI.winsize/2;
 eI.scf=1;
 eI.featDim = 512;
 eI.num_contextwin = 3;
@@ -264,8 +264,7 @@ train_files = train_files(1:3);
 eI.seqLen = [1 50 100];
 eI.inputL1=0;
 eI.outputL1=0;
-eI.circular_step=100000;
-[data_ag, target_ag, mixture_ag] = ...
-    formulate_data_time_domain(train_files, eI, 0)
+eI.circular_step = 100000;
+[data_ag, target_ag, mixture_ag] = formulate_data_td(train_files, eI, 0);
 profile viewer
 profile off

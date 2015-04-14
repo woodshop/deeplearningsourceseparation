@@ -1,9 +1,7 @@
-function train_mir1k_demo_time_domain(context_win, hidden_units, ...
-                                      num_layers, isdropout, isRNN, ...
-                                      iscleanonly, circular_step, ...
-                                      isinputL1, RealorComplex, pos_neg_r, ...
-                                      outputnonlinear, opt, train_mode, ...
-                                      const, const2, wav_dir)
+function train_mir1k_demo_td(context_win, hidden_units, num_layers, ...
+    isdropout, isRNN, iscleanonly, circular_step, isinputL1, ...
+    RealorComplex, pos_neg_r, outputnonlinear, opt, train_mode, ...
+    const, const2, debug)
     
 % Demo MIR-1K training ---------------------------------------------
 % context_win - context window size
@@ -49,6 +47,10 @@ eI = [];
 % 0- real, 1- complex
 eI.RealorComplex = RealorComplex;
 eI.seqLen = [1 10 25 50 100];
+eI.winsize = 512;
+% eI.nFFT = 1024;
+eI.hop =eI.winsize/2;
+eI.scf=1;
 
 % single target or multiple targets
 eI.cleanonly = iscleanonly;
@@ -57,7 +59,7 @@ eI.cleanonly = iscleanonly;
 eI.num_contextwin = context_win;
 
 % dimension of each input frame
-eI.featDim = 1;
+eI.featDim = eI.winsize;
 
 eI.dropout = isdropout;
 
@@ -73,11 +75,11 @@ hidden_units_set=[];
 for il = 1:num_layers
     hidden_units_set = [hidden_units_set, hidden_units];
 end
-% 2 hidden layers and output layer
+% hidden layers and output layer
 if eI.cleanonly == 1,
-    eI.layerSizes = [hidden_units_set  1 ];
+    eI.layerSizes = [hidden_units_set eI.winsize];
 else
-    eI.layerSizes = [hidden_units_set  2];
+    eI.layerSizes = [hidden_units_set 2*eI.winsize];
 end
 
 % highest hidden layer is temporal
@@ -187,15 +189,18 @@ options.MaxFunEvals = 2500;
 options.Corr = 50;
 options.DerivativeCheck = 'off';
 % options.DerivativeCheck = 'on';
-options.outputFcn = @save_callback_mir1k_general;
+options.outputFcn = @save_callback_mir1k_general_td;
 
 eI.DataPath=[codeDir,'mir1k', filesep, 'Wavfile',filesep];
 
-train_files= dir([eI.DataPath, wav_dir, filesep,'*wav']);
+train_files = dir( [eI.DataPath, 'train',filesep,'*wav']);
+if debug
+    train_files = train_files(1:10);
+end
 
 % chunk
 [data_cell, targets_cell, mixture_spectrum] = ...
-    formulate_data_time_domain(train_files, eI, wav_dir);
+    formulate_data_td(train_files, eI, eI.train_mode);
 
 %% BSS EVAL setting
 global SDR;
@@ -220,7 +225,7 @@ eI.bss3 = 1;
 eI.writewav = 0;
 
 %% run optimizer
-[theta,val] = minFunc(@drdae_discrim_joint_kl_obj, theta, options, eI, ...
+[theta,val] = minFunc(@drdae_discrim_joint_kl_obj_td, theta, options, eI, ...
     data_cell, targets_cell, mixture_spectrum, false, false);
 
 fprintf('%s\tdevmaxiter:\t%d\tdevGNSDR:\t%.3f\ttestGNSDR:\t%.3f\t',...
@@ -235,8 +240,8 @@ fprintf('testGSIR:\t%.3f\ttestGSAR:\t%.3f\n', SDR_bss3.testsir, ...
         SDR_bss3.testsar);
 return;
 
-
 %% unit test - small example
+debug = 1;
 % context window size
 context_win = 1;
 % hidden units
@@ -268,13 +273,9 @@ train_mode = 0;
 % 0:'softlinear',1:'softabs', 2:'softquad', 3:'softabs_const',
 % 4:'softabs_kl_const'
 opt = 1;
-wav_dir = 'train';
-
-train_mir1k_demo_time_domain(context_win, hidden_units, num_layers, ...
-                             isdropout, isRNN, iscleanonly, circular_step, ...
-                             isinputL1, RealorComplex, pos_neg_r, ...
-                             outputnonlinear, opt, train_mode, const, ...
-                             const2, wav_dir)
+train_mir1k_demo_td(context_win, hidden_units, num_layers, isdropout, ...
+    isRNN, iscleanonly, circular_step, isinputL1, RealorComplex, ...
+    pos_neg_r, outputnonlinear, opt, train_mode, const, const2, debug)
 
 %% unit test 2 - best setting:
 % context window size - this was 3
@@ -320,4 +321,4 @@ train_mir1k_demo_time_domain(context_win, hidden_units, num_layers, ...
                              isdropout, isRNN, iscleanonly, circular_step, ...
                              isinputL1, RealorComplex, pos_neg_r, ...
                              outputnonlinear, opt, train_mode, const, ...
-                             const2, wav_dir)
+                             const2)
